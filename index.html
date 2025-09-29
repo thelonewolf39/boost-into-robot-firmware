@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeus II Firmware Downloader</title>
+<style>
+body { font-family: sans-serif; text-align: center; padding: 2rem; }
+button { padding: 1rem 2rem; font-size: 1.2rem; margin: 1rem; }
+progress { width: 80%; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>Zeus II Firmware Loader</h1>
+<p>Select your firmware file (.bin) and send it to your hub via Bluetooth.</p>
+
+<input type="file" id="firmwareFile" accept=".bin">
+<br>
+<button id="connectBtn">Connect & Send Firmware</button>
+
+<progress id="progressBar" value="0" max="100"></progress>
+<p id="status">Status: Waiting</p>
+
+<script>
+const SERVICE_UUID = '00001623-1212-efde-1623-785feabcd123'; // DFU / custom
+const CHARACTERISTIC_UUID = '00001624-1212-efde-1623-785feabcd123'; // write
+
+let device, characteristic;
+
+async function connectAndSend() {
+    const fileInput = document.getElementById('firmwareFile');
+    if (!fileInput.files.length) {
+        alert('Please select a firmware file!');
+        return;
+    }
+
+    const firmwareFile = fileInput.files[0];
+    const arrayBuffer = await firmwareFile.arrayBuffer();
+
+    // 1️⃣ Connect to BLE hub
+    document.getElementById('status').innerText = 'Status: Scanning...';
+    try {
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ name: 'Zeus II' }],
+            optionalServices: [SERVICE_UUID]
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+
+        document.getElementById('status').innerText = 'Status: Sending firmware...';
+
+        // 2️⃣ Send firmware in chunks
+        const CHUNK_SIZE = 20; // BLE packet size
+        const totalChunks = Math.ceil(arrayBuffer.byteLength / CHUNK_SIZE);
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, arrayBuffer.byteLength);
+            const chunk = arrayBuffer.slice(start, end);
+            await characteristic.writeValue(new Uint8Array(chunk));
+            document.getElementById('progressBar').value = ((i+1)/totalChunks)*100;
+        }
+
+        document.getElementById('status').innerText = 'Status: Firmware transfer complete!';
+    } catch (err) {
+        console.error(err);
+        document.getElementById('status').innerText = 'Status: Error - ' + err.message;
+    }
+}
+
+document.getElementById('connectBtn').addEventListener('click', connectAndSend);
+</script>
+
+</body>
+</html>
